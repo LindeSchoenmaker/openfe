@@ -258,7 +258,7 @@ def plot_ligand_COM_drift(time: list[float], data: list[list[float]]):
     ax.set_ylabel('Distance (A)')
     ax.set_title('Ligand COM drift')
 
-    return ax
+    return fig
 
 
 def plot_ligand_RMSD(time: list[float], data: list[list[float]]):
@@ -272,4 +272,4 @@ def plot_ligand_RMSD(time: list[float], data: list[list[float]]):
     ax.set_ylabel('RMSD (A)')
     ax.set_title('Ligand RMSD')
 
-    return ax
+    return fig
