@@ -148,11 +148,10 @@ class HybridTopologyFactory:
         # Other options
         self._use_dispersion_correction = use_dispersion_correction
         self._interpolate_14s = interpolate_old_and_new_14s
+        self._flatten_torsions = flatten_torsions
 
-        # TODO: re-implement this at some point
-        if flatten_torsions:
-            errmsg = "Flatten torsions option is not current implemented"
-            raise ValueError(errmsg)
+        if self._flatten_torsions:
+            logger.info("Flattening torsions of unique new/old at lambda = 0/1")
 
         # Sofcore options
         self._softcore_alpha = softcore_alpha
@@ -1448,13 +1447,17 @@ class HybridTopologyFactory:
             # If all atoms are in the core, we'll need to find the
             # corresponding parameters in the old system and interpolate
             if hybrid_index_set.intersection(self._atom_classes['unique_old_atoms']):
-                # Then it goes to a standard force...
-                self._hybrid_system_forces['unique_atom_torsion_force'].addTorsion(
-                    hybrid_index_list[0], hybrid_index_list[1],
-                    hybrid_index_list[2], hybrid_index_list[3],
-                    torsion_parameters[4], torsion_parameters[5],
-                    torsion_parameters[6]
-                )
+                if self._flatten_torsions:
+                    force_params = [torsion_parameters[4], torsion_parameters[5], torsion_parameters[6], torsion_parameters[4], torsion_parameters[5], 0.0]
+                    self._hybrid_system_forces['custom_torsion_force'].addTorsion(hybrid_index_list[0], hybrid_index_list[1], hybrid_index_list[2], hybrid_index_list[3], force_params)
+                else:
+                    # Then it goes to a standard force...
+                    self._hybrid_system_forces['unique_atom_torsion_force'].addTorsion(
+                        hybrid_index_list[0], hybrid_index_list[1],
+                        hybrid_index_list[2], hybrid_index_list[3],
+                        torsion_parameters[4], torsion_parameters[5],
+                        torsion_parameters[6]
+                    )
             else:
                 # It is a core-only term, an environment-only term, or a
                 # core/env term; in any case, it goes to the core torsion_force
@@ -1478,13 +1481,17 @@ class HybridTopologyFactory:
             hybrid_index_set = set(hybrid_index_list)
 
             if hybrid_index_set.intersection(self._atom_classes['unique_new_atoms']):
-                # Then it goes to the custom torsion force (scaled to zero)
-                self._hybrid_system_forces['unique_atom_torsion_force'].addTorsion(
-                    hybrid_index_list[0], hybrid_index_list[1],
-                    hybrid_index_list[2], hybrid_index_list[3],
-                    torsion_parameters[4], torsion_parameters[5],
-                    torsion_parameters[6]
-                )
+                if self._flatten_torsions:
+                    force_params = [torsion_parameters[4], torsion_parameters[5], 0.0, torsion_parameters[4], torsion_parameters[5], torsion_parameters[6]]
+                    self._hybrid_system_forces['custom_torsion_force'].addTorsion(hybrid_index_list[0], hybrid_index_list[1], hybrid_index_list[2], hybrid_index_list[3], force_params)
+                else:
+                    # Then it goes to the custom torsion force (scaled to zero)
+                    self._hybrid_system_forces['unique_atom_torsion_force'].addTorsion(
+                        hybrid_index_list[0], hybrid_index_list[1],
+                        hybrid_index_list[2], hybrid_index_list[3],
+                        torsion_parameters[4], torsion_parameters[5],
+                        torsion_parameters[6]
+                    )
             else:
                 hybrid_force_parameters = [
                     0.0, 0.0, 0.0, torsion_parameters[4],
