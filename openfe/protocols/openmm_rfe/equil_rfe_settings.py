@@ -8,25 +8,26 @@ energies using :class:`openfe.protocols.openmm_rfe.equil_rfe_methods.py`
 """
 from __future__ import annotations
 
-from typing import Optional
-from openff.units import unit
-import os
-
 from gufe.settings import (
+    OpenMMSystemGeneratorFFSettings,
     Settings,
     SettingsBaseModel,
-    OpenMMSystemGeneratorFFSettings,
     ThermoSettings,
 )
+
 from openfe.protocols.openmm_utils.omm_settings import (
-    SystemSettings, SolvationSettings, AlchemicalSamplerSettings,
-    OpenMMEngineSettings, IntegratorSettings, SimulationSettings
+    AlchemicalSamplerSettings,
+    IntegratorSettings,
+    OpenMMEngineSettings,
+    SimulationSettings,
+    SolvationSettings,
+    SystemSettings,
 )
 
 try:
     from pydantic.v1 import validator
 except ImportError:
-    from pydantic import validator  # type: ignore[assignment]
+    pass  # type: ignore[assignment]
 
 
 class AlchemicalSettings(SettingsBaseModel):
@@ -77,6 +78,14 @@ class AlchemicalSettings(SettingsBaseModel):
     endstate the torsion term is turned off/on depending on the state the
     unique atoms belong to. Default False.
     """
+    use_modified_angle_constant = False
+    modified_angle_constant = 3.55
+    """
+    Whether to modify the angle force constant and with which value as
+    defined in Nonplanar Triple Junctions in Fleck et al. JCTC 2021. This
+    force constrant is used for angles linking the dummy atom to core atoms
+    """
+
 
 
 class RelativeHybridTopologyProtocolSettings(Settings):

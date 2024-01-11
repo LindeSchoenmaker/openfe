@@ -17,44 +17,51 @@ TODO
 """
 from __future__ import annotations
 
-import os
 import logging
-from collections import defaultdict
+import os
+import pathlib
 import uuid
 import warnings
+from collections import defaultdict
 from itertools import chain
-import numpy as np
-import numpy.typing as npt
-from openff.units import unit
-from openff.units.openmm import to_openmm, from_openmm, ensure_quantity
-from openff.toolkit.topology import Molecule as OFFMolecule
-from openmmtools import multistate
-from typing import Optional
-from openmm import unit as omm_unit
-from openmm.app import PDBFile
-import pathlib
-from typing import Any, Iterable, Union
-import openmmtools
-import mdtraj
+from typing import Any, Iterable, Optional, Union
 
 import gufe
+import mdtraj
+import numpy as np
+import numpy.typing as npt
+import openmmtools
 from gufe import (
-    settings, ChemicalSystem, LigandAtomMapping, Component, ComponentMapping,
-    SmallMoleculeComponent, ProteinComponent,
+    ChemicalSystem,
+    Component,
+    ComponentMapping,
+    LigandAtomMapping,
+    SmallMoleculeComponent,
+    settings,
 )
+from openff.toolkit.topology import Molecule as OFFMolecule
+from openff.units import unit
+from openff.units.openmm import ensure_quantity, from_openmm, to_openmm
+from openmmtools import multistate
 
-from .equil_rfe_settings import (
-    RelativeHybridTopologyProtocolSettings, SystemSettings,
-    SolvationSettings, AlchemicalSettings,
-    AlchemicalSamplerSettings, OpenMMEngineSettings,
-    IntegratorSettings, SimulationSettings
-)
+from ...utils import log_system_probe, without_oechem_backend
 from ..openmm_utils import (
-    system_validation, settings_validation, system_creation,
-    multistate_analysis
+    multistate_analysis,
+    settings_validation,
+    system_creation,
+    system_validation,
 )
 from . import _rfe_utils
-from ...utils import without_oechem_backend, log_system_probe
+from .equil_rfe_settings import (
+    AlchemicalSamplerSettings,
+    AlchemicalSettings,
+    IntegratorSettings,
+    OpenMMEngineSettings,
+    RelativeHybridTopologyProtocolSettings,
+    SimulationSettings,
+    SolvationSettings,
+    SystemSettings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -640,6 +647,8 @@ class RelativeHybridTopologyProtocolUnit(gufe.ProtocolUnit):
             softcore_LJ_v2_alpha=alchem_settings.softcore_alpha,
             interpolate_old_and_new_14s=alchem_settings.interpolate_old_and_new_14s,
             flatten_torsions=alchem_settings.flatten_torsions,
+            use_modified_angle_constant=alchem_settings.use_modified_angle_constant,
+            modified_angle_constant=alchem_settings.modified_angle_constant,
         )
 
         # 4. Create lambda schedule
