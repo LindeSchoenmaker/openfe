@@ -3,16 +3,17 @@
 # The eventual goal is to move a version of this towards openmmtools
 # LICENSE: MIT
 
-import logging
-import openmm
-from openmm import unit, app
-import numpy as np
 import copy
 import itertools
+import logging
+
+import mdtraj as mdt
+import numpy as np
+import openmm
+from openmm import app, unit
+
 # OpenMM constant for Coulomb interactions (implicitly in md_unit_system units)
 from openmmtools.constants import ONE_4PI_EPS0
-import mdtraj as mdt
-
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,10 @@ class HybridTopologyFactory:
                  softcore_LJ_v2=True,
                  softcore_LJ_v2_alpha=0.85,
                  interpolate_old_and_new_14s=False,
-                 flatten_torsions=False,
+                 flatten_torsions=False,                 
+                 use_modified_angle_constant=False,
+                 modified_angle_constant=3.55,
+
                  **kwargs):
         """
         Initialize the Hybrid topology factory.
@@ -130,6 +134,15 @@ class HybridTopologyFactory:
             If True, torsion terms involving `unique_new_atoms` will be
             scaled such that at lambda=0,1, the torsion term is turned off/on
             respectively. The opposite is true for `unique_old_atoms`.
+        use_modified_angle_constant: bool, default False
+            Whether to modify the angle force constant as defined for 
+            Nonplanar Triple Junctions in Fleck et al. JCTC 2021. This force 
+            constrained is used for angles between 1 unique new/old atom and 
+            2 core atoms at lambda = 0/1.
+        modified_angle_constant: float, default is 3.55
+            angle force constant used as modified angle constant (in 
+            kcal mol-1rad-2) 
+
         """
 
         # Assign system positions and force
@@ -152,6 +165,13 @@ class HybridTopologyFactory:
 
         if self._flatten_torsions:
             logger.info("Flattening torsions of unique new/old at lambda = 0/1")
+
+        self._use_modified_angle_constant = use_modified_angle_constant
+        self._modified_angle_constant = modified_angle_constant
+
+        if self._use_modified_angle_constant:
+            logger.info(
+                f"Using the modified angle force constant of {self._modified_angle_constant} for angles linking core and unique new/old at lambda = 0/1")
 
         # Sofcore options
         self._softcore_alpha = softcore_alpha
@@ -1280,22 +1300,41 @@ class HybridTopologyFactory:
                         errmsg = "we disallow unique-environment terms"
                         raise ValueError(errmsg)
 
-                    self._hybrid_system_forces['standard_angle_force'].addAngle(
-                        hybrid_index_list[0], hybrid_index_list[1],
-                        hybrid_index_list[2], old_angle_parameters[3],
-                        old_angle_parameters[4]
-                    )
+                    self._hybrid_system_forces[
+                        'standard_angle_force'].addAngle(
+                            hybrid_index_list[0], hybrid_index_list[1],
+                            hybrid_index_list[2], old_angle_parameters[3],
+                            old_angle_parameters[4])
                 else:
                     # There are no env atoms, so we can treat this term
                     # appropriately
 
-                    # We don't soften so just add this to the standard angle
-                    # force
-                    self._hybrid_system_forces['standard_angle_force'].addAngle(
-                        hybrid_index_list[0], hybrid_index_list[1],
-                        hybrid_index_list[2], old_angle_parameters[3],
-                        old_angle_parameters[4]
-                    )
+                    # Check if we are using modified angle force constant for angles with dummy atoms
+
+                    if len(
+                            hybrid_index_set.intersection(
+                                self._atom_classes['unique_old_atoms'])
+                    ) == 1 and self._use_modified_angle_constant:
+                        hybrid_force_parameters = [
+                            old_angle_parameters[3], old_angle_parameters[4],
+                            old_angle_parameters[3],
+                            self._modified_angle_constant *
+                            unit.kilojoule_per_mole / unit.radian**2
+                        ]
+                        print(f'old_custom: {hybrid_index_list}')
+                        self._hybrid_system_forces[
+                            'core_angle_force'].addAngle(
+                                hybrid_index_list[0], hybrid_index_list[1],
+                                hybrid_index_list[2], hybrid_force_parameters)
+                    else:
+                        # We are not using modified angle force constant so just add this to the standard angle
+                        # force
+                        print(f'old_regular: {hybrid_index_list}')
+                        self._hybrid_system_forces[
+                            'standard_angle_force'].addAngle(
+                                hybrid_index_list[0], hybrid_index_list[1],
+                                hybrid_index_list[2], old_angle_parameters[3],
+                                old_angle_parameters[4])
 
             # Otherwise, only environment atoms are in this interaction, so
             # add it to the standard angle force
@@ -1320,7 +1359,8 @@ class HybridTopologyFactory:
 
             # Get the indices in the hybrid system
             hybrid_index_list = [
-                self._new_to_hybrid_map[new_atomid] for new_atomid in new_angle_parameters[:3]
+                self._new_to_hybrid_map[new_atomid]
+                for new_atomid in new_angle_parameters[:3]
             ]
             hybrid_index_set = set(hybrid_index_list)
 
@@ -1328,20 +1368,39 @@ class HybridTopologyFactory:
             # is nonempty, it must be added:
             # TODO - there's a ton of len > 0 on sets, empty sets == False,
             #        so we can simplify this logic.
-            if len(hybrid_index_set.intersection(
-                    self._atom_classes['unique_new_atoms'])) > 0:
+            if len(
+                    hybrid_index_set.intersection(
+                        self._atom_classes['unique_new_atoms'])) > 0:
                 if hybrid_index_set.intersection(
                         self._atom_classes['environment_atoms']):
                     errmsg = ("we disallow angle terms with unique new and "
                               "environment atoms")
                     raise ValueError(errmsg)
 
-                # Not softening just add to the nonalchemical force
-                self._hybrid_system_forces['standard_angle_force'].addAngle(
-                    hybrid_index_list[0], hybrid_index_list[1],
-                    hybrid_index_list[2], new_angle_parameters[3],
-                    new_angle_parameters[4]
-                )
+                # Check if we are using modified angle force constant for angles with dummy atoms
+                if len(
+                        hybrid_index_set.intersection(
+                            self._atom_classes['unique_new_atoms'])
+                ) == 1 and self._use_modified_angle_constant:
+                    hybrid_force_parameters = [
+                        new_angle_parameters[3],
+                        self._modified_angle_constant *
+                        unit.kilojoule_per_mole / unit.radian**2,
+                        new_angle_parameters[3], new_angle_parameters[4]
+                    ]
+                    print(f'new_custom: {hybrid_index_list}')
+                    self._hybrid_system_forces['core_angle_force'].addAngle(
+                        hybrid_index_list[0], hybrid_index_list[1],
+                        hybrid_index_list[2], hybrid_force_parameters)
+
+                else:
+                    # Not using modified angle force constant just add to the nonalchemical force
+                    print(f'new_regular: {hybrid_index_list}')
+                    self._hybrid_system_forces[
+                        'standard_angle_force'].addAngle(
+                            hybrid_index_list[0], hybrid_index_list[1],
+                            hybrid_index_list[2], new_angle_parameters[3],
+                            new_angle_parameters[4])
 
             elif hybrid_index_set.issubset(self._atom_classes['core_atoms']):
                 if not self._find_angle_parameters(self._hybrid_system_forces['core_angle_force'],
@@ -2087,12 +2146,12 @@ class HybridTopologyFactory:
 
         if self._softcore_LJ_v2:
             old_new_nonbonded_exceptions += "U_sterics = select(step(r - r_LJ), 4*epsilon*x*(x-1.0), U_sterics_quad);"
-            old_new_nonbonded_exceptions += f"U_sterics_quad = Force*(((r - r_LJ)^2)/2 - (r - r_LJ)) + U_sterics_cut;"
-            old_new_nonbonded_exceptions += f"U_sterics_cut = 4*epsilon*((sigma/r_LJ)^6)*(((sigma/r_LJ)^6) - 1.0);"
-            old_new_nonbonded_exceptions += f"Force = -4*epsilon*((-12*sigma^12)/(r_LJ^13) + (6*sigma^6)/(r_LJ^7));"
-            old_new_nonbonded_exceptions += f"x = (sigma/r)^6;"
-            old_new_nonbonded_exceptions += f"r_LJ = softcore_alpha*((26/7)*(sigma^6)*lambda_sterics_deprecated)^(1/6);"
-            old_new_nonbonded_exceptions += f"lambda_sterics_deprecated = new_interaction*(1.0 - lambda_sterics_insert) + old_interaction*lambda_sterics_delete;"
+            old_new_nonbonded_exceptions += "U_sterics_quad = Force*(((r - r_LJ)^2)/2 - (r - r_LJ)) + U_sterics_cut;"
+            old_new_nonbonded_exceptions += "U_sterics_cut = 4*epsilon*((sigma/r_LJ)^6)*(((sigma/r_LJ)^6) - 1.0);"
+            old_new_nonbonded_exceptions += "Force = -4*epsilon*((-12*sigma^12)/(r_LJ^13) + (6*sigma^6)/(r_LJ^7));"
+            old_new_nonbonded_exceptions += "x = (sigma/r)^6;"
+            old_new_nonbonded_exceptions += "r_LJ = softcore_alpha*((26/7)*(sigma^6)*lambda_sterics_deprecated)^(1/6);"
+            old_new_nonbonded_exceptions += "lambda_sterics_deprecated = new_interaction*(1.0 - lambda_sterics_insert) + old_interaction*lambda_sterics_delete;"
         else:
             old_new_nonbonded_exceptions += "U_sterics = 4*epsilon*x*(x-1.0); x = (sigma/reff_sterics)^6;"
             old_new_nonbonded_exceptions += "reff_sterics = sigma*((softcore_alpha*lambda_alpha + (r/sigma)^6))^(1/6);"
